@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <!-- Atur tema dark mode dari localStorage -->
+    <script>
+      (function () {
+        try {
+          const theme = localStorage.getItem("theme");
+          if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+          } else if (theme === "light") {
+            document.documentElement.classList.remove("dark");
+          } else if (
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches
+          ) {
+            document.documentElement.classList.add("dark");
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      })();
+    </script>
+
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Judul Website -->
+    <title>Rohis AL-HIDAYAH</title>
+    
+    <!-- SEO -->
+    <meta name="description" content="Website resmi Rohis SMA NEGERI 1 JETIS. Info kegiatan, motivasi islami, dan program kerja Rohis." />
+    <meta name="keywords" content="Rohis, SMA NEGERI 1 JETIS , Rohani Islam, Kegiatan Rohis, Motivasi Islami, AL-HIDAYAH" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/logo 3.jpg" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Rohis SMAN 1 JETIS" />
+    <meta property="og:description" content="Website resmi Rohis SMAM 1 JETIS. Info kegiatan, motivasi islami, dan program kerja Rohis." />
+    <meta property="og:image" content="/logo 3.jpg" />
+    <meta property="og:url" content="https://rohis-app.vercel.app/" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Rohis SMAN 1 JETIS" />
+    <meta name="twitter:description" content="Website resmi Rohis SMAN 1 JETIS." />
+    <meta name="twitter:image" content="/logo 3.jpg" />
+
+    <!-- Theme color (warna address bar di HP) -->
+    <meta name="theme-color" content="#10B981" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
