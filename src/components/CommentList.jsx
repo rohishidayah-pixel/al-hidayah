@@ -1,3 +1,4 @@
+// src/components/CommentList.jsx
 import { useEffect, useState, useRef } from "react";
 import { db } from "../firebase/config";
 import { ref, onValue, push, update } from "firebase/database";
@@ -15,19 +16,10 @@ export default function CommentList() {
     return onValue(commentsRef, (snap) => {
       const val = snap.val() || {};
       const arr = Object.keys(val).map((k) => ({ id: k, ...val[k] }));
-
-      // Urutkan lama → baru
-      const sorted = arr.sort((a, b) => a.date - b.date);
+      const sorted = arr.sort((a, b) => a.date - b.date); // urut lama → baru
       setComments(sorted);
     });
   }, []);
-
-  // 🔹 Auto scroll ke bawah saat komentar baru
-  useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [comments]);
 
   // 🔹 Kirim komentar baru
   const handleSubmit = async (e) => {
@@ -47,6 +39,13 @@ export default function CommentList() {
     });
 
     setNewComment("");
+
+    // ✅ Scroll ke bawah hanya saat user kirim komentar
+    setTimeout(() => {
+      if (bottomRef.current) {
+        bottomRef.current.scrollIntoView({ behavior: "smooth" });
+      }
+    }, 300);
   };
 
   // 🔹 Tombol Like
