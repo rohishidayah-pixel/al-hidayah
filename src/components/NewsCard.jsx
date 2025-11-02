@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React from "react";
 import { motion } from "framer-motion";
 import { Calendar } from "lucide-react";
+import { Link } from "react-router-dom";
 
 /**
  * 🔹 Helper: convert Google Drive preview/share link → direct image link
@@ -17,8 +18,6 @@ const formatImageUrl = (url) => {
 };
 
 export default function NewsCard({ item }) {
-  const [expanded, setExpanded] = useState(false);
-
   const imgSrc = item?.image ? formatImageUrl(item.image) : "/logo.png";
   const dateText = item?.date
     ? new Date(item.date).toLocaleDateString("id-ID", {
@@ -46,7 +45,7 @@ export default function NewsCard({ item }) {
             className="w-full h-48 object-cover"
             onError={(e) => {
               e.currentTarget.onerror = null;
-              e.currentTarget.src = "/logo.png"; // fallback jika error
+              e.currentTarget.src = "/logo.png"; // fallback
             }}
           />
         </div>
@@ -68,24 +67,18 @@ export default function NewsCard({ item }) {
         </div>
 
         {/* Deskripsi */}
-        <div className="text-gray-700 dark:text-gray-300 text-sm">
-          <p
-            className={`leading-relaxed transition-all ${
-              expanded ? "max-h-[2000px]" : "line-clamp-3"
-            }`}
-          >
-            {item?.description || "Tidak ada deskripsi."}
-          </p>
+        <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed line-clamp-3">
+          {item?.description || "Tidak ada deskripsi."}
+        </p>
 
-          {/* Tombol selengkapnya */}
-          {item?.description && item.description.length > 150 && (
-            <button
-              onClick={() => setExpanded((s) => !s)}
-              className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-300 hover:underline"
-            >
-              {expanded ? "Tutup" : "Baca selengkapnya"}
-            </button>
-          )}
+        {/* 🔹 Tombol baca selengkapnya → ke halaman detail */}
+        <div className="mt-3">
+          <Link
+            to={`/berita/${item.key}`}
+            className="inline-block text-xs font-semibold text-emerald-600 dark:text-emerald-300 hover:underline"
+          >
+            Baca selengkapnya 
+          </Link>
         </div>
       </div>
     </motion.article>
