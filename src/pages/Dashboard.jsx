@@ -1,312 +1,147 @@
 // src/pages/Dashboard.jsx
 import { useState, useEffect } from "react";
 import { db } from "../firebase/config";
-import { ref, push, set, onValue, remove } from "firebase/database";
-import { motion } from "framer-motion";
+import {
+  ref,
+  push,
+  set,
+  onValue,
+  remove,
+  get,
+  query,
+  orderByChild,
+  equalTo,
+} from "firebase/database";
+import { motion, AnimatePresence } from "framer-motion";
+import { Moon, Sun } from "lucide-react";
 
 /**
- * Dashboard lengkap + theme switcher (hijau, biru, dark).
- * Paste ke src/pages/Dashboard.jsx
+ * Dashboard lengkap — 1 file.
+ * - Tombol hapus berita otomatis menghapus komentar terkait (comments.activityId === activityId)
+ * - Tombol hapus komentar menghapus satu komentar
+ * - Responsive mobile, dark mode toggle
  *
- * Pastikan Tailwind sudah terpasang.
+ * Pastikan:
+ * - Tailwind sudah terpasang
+ * - ../firebase/config meng-export initialized Realtime DB instance `db`
  */
 
-/* Helper convert Google Drive link → direct link */
 const formatImageUrl = (url) => {
   if (!url) return "";
   if (url.includes("drive.google.com")) {
     const match = url.match(/\/d\/([^/]+)\//);
-    if (match && match[1]) {
-      return `https://drive.google.com/uc?export=view&id=${match[1]}`;
-    }
+    if (match && match[1]) return `https://drive.google.com/uc?export=view&id=${match[1]}`;
   }
   return url;
 };
 
-/* Theme config: tiap tema punya kelas header, btn, card, accent */
-const THEMES = {
-  green: {
-    name: "Hijau Islami",
-    header: "bg-gradient-to-r from-emerald-600 to-emerald-500 text-white",
-    btnPrimary: "bg-emerald-500 hover:bg-emerald-600 text-white",
-    btnAccent: "bg-emerald-100 text-emerald-800",
-    card: "bg-emerald-50/60",
-    accentText: "text-emerald-600",
-  },
-  blue: {
-    name: "Biru Lembut",
-    header: "bg-gradient-to-r from-sky-600 to-blue-500 text-white",
-    btnPrimary: "bg-blue-500 hover:bg-blue-600 text-white",
-    btnAccent: "bg-blue-50 text-blue-800",
-    card: "bg-blue-50/60",
-    accentText: "text-blue-600",
-  },
-  dark: {
-    name: "Dark Elegan",
-    header: "bg-gradient-to-r from-gray-800 to-gray-700 text-white",
-    btnPrimary: "bg-gray-700 hover:bg-gray-600 text-white",
-    btnAccent: "bg-gray-800 text-gray-100",
-    card: "bg-gray-800/70",
-    accentText: "text-gray-300",
-  },
-};
-
 export default function Dashboard() {
-  // UI tab selection
-  const [selected, setSelected] = useState(null); // 'activity','motivation','struktur','program','manage'
+  // ui
+  const [darkMode, setDarkMode] = useState(false);
+  const [tab, setTab] = useState("news"); // news,motivasi,struktur,program,manage
   const [loading, setLoading] = useState(false);
 
-  // ----- Activity / Berita -----
-  const [activity, setActivity] = useState("");
-  const [activityDesc, setActivityDesc] = useState("");
-  const [activityImage, setActivityImage] = useState("");
-  const [previewError, setPreviewError] = useState(false);
+  // activities & preview
   const [activities, setActivities] = useState([]);
+  const [previewError, setPreviewError] = useState(false);
 
-  // ----- Comments -----
+  // comments (global list) and comment input not needed here
   const [comments, setComments] = useState([]);
 
-  // ----- Motivasi -----
-  const [motivation, setMotivation] = useState("");
-  const [author, setAuthor] = useState("");
-  const [latestMotivation, setLatestMotivation] = useState(null);
-  const [motivationActive, setMotivationActive] = useState(false);
+  // motivasi
+  const [motivasiText, setMotivasiText] = useState("");
+  const [motivasiAuthor, setMotivasiAuthor] = useState("");
+  const [latestMotivasi, setLatestMotivasi] = useState(null);
+  const [motivasiActive, setMotivasiActive] = useState(false);
 
-  // ----- Struktur organisasi (format baru) -----
+  // struktur
   const [struktur, setStruktur] = useState({});
   const [newJabatan, setNewJabatan] = useState("");
 
-  // ----- Program Kerja -----
-  const currentYear = new Date().getFullYear();
-  const [periode, setPeriode] = useState(currentYear);
+  // program
+  const [periode, setPeriode] = useState(new Date().getFullYear());
   const [programKerja, setProgramKerja] = useState({});
   const [newSie, setNewSie] = useState("");
 
-  // ----- Theme -----
-  const [themeKey, setThemeKey] = useState("green");
-  const theme = THEMES[themeKey];
+  // form inputs for activity
+  const [aTitle, setATitle] = useState("");
+  const [aDesc, setADesc] = useState("");
+  const [aImage, setAImage] = useState("");
 
-  // ================================
-  // Firebase listeners (mount)
-  // ================================
   useEffect(() => {
-    // activities
+    // dark mode class on <html>
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
+
+  // ---------- Firebase listeners ----------
+  useEffect(() => {
     const unsubActivities = onValue(ref(db, "activities"), (snap) => {
       const val = snap.val() || {};
-      setActivities(
-        Object.keys(val)
-          .map((k) => ({ key: k, ...val[k] }))
-          .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
-      );
+      // sort by date desc
+      const arr = Object.keys(val)
+        .map((k) => ({ key: k, ...val[k] }))
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      setActivities(arr);
     });
-    // comments
+
     const unsubComments = onValue(ref(db, "comments"), (snap) => {
       const val = snap.val() || {};
-      setComments(
-        Object.keys(val)
-          .map((k) => ({ key: k, ...val[k] }))
-          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      );
+      const arr = Object.keys(val)
+        .map((k) => ({ key: k, ...val[k] }))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setComments(arr);
     });
-    // struktur
+
     const unsubStruktur = onValue(ref(db, "struktur"), (snap) => {
-      if (snap.exists()) setStruktur(snap.val());
-      else setStruktur({});
+      setStruktur(snap.val() || {});
     });
-    // motivasi
+
+    const unsubProgram = onValue(ref(db, `programKerja/${periode}`), (snap) => {
+      setProgramKerja(snap.val() || {});
+    });
+
     const unsubMotivasi = onValue(ref(db, "motivasi"), (snap) => {
       const val = snap.val() || {};
       const all = Object.values(val)
         .map((m) => ({ ...m, uploadedAt: new Date(m.uploadedAt) }))
         .sort((a, b) => b.uploadedAt - a.uploadedAt);
       if (all.length === 0) {
-        setLatestMotivation(null);
-        setMotivationActive(false);
+        setLatestMotivasi(null);
+        setMotivasiActive(false);
       } else {
         const latest = all[0];
         const expiry = new Date(latest.uploadedAt);
         expiry.setDate(expiry.getDate() + 7);
         if (new Date() <= expiry) {
-          setLatestMotivation(latest);
-          setMotivationActive(true);
+          setLatestMotivasi(latest);
+          setMotivasiActive(true);
         } else {
-          setLatestMotivation(null);
-          setMotivationActive(false);
+          setLatestMotivasi(null);
+          setMotivasiActive(false);
         }
       }
     });
-    // programKerja for current periode (initial)
-    const unsubProgram = onValue(ref(db, `programKerja/${periode}`), (snap) => {
-      if (snap.exists()) setProgramKerja(snap.val());
-      else setProgramKerja({});
-    });
 
-    // cleanup
     return () => {
       unsubActivities();
       unsubComments();
       unsubStruktur();
-      unsubMotivasi();
       unsubProgram();
+      unsubMotivasi();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mounted once
-
-  // Program listener react to periode change
-  useEffect(() => {
-    const unsub = onValue(ref(db, `programKerja/${periode}`), (snap) => {
-      if (snap.exists()) setProgramKerja(snap.val());
-      else setProgramKerja({});
-    });
-    return () => unsub();
   }, [periode]);
 
-  // -----------------------------
-  // Helpers / Actions
-  // -----------------------------
-  // ACTIVITY submit
-  const handleActivitySubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await push(ref(db, "activities"), {
-        title: activity,
-        description: activityDesc,
-        image: formatImageUrl(activityImage),
-        date: new Date().toISOString(),
-      });
-      setActivity("");
-      setActivityDesc("");
-      setActivityImage("");
-      setPreviewError(false);
-      alert("✅ Kegiatan berhasil diupload!");
-      setSelected(null);
-    } catch (err) {
-      console.error("Error upload activity:", err);
-      alert("Gagal upload kegiatan.");
-    } finally {
-      setLoading(false);
-    }
+  // ---------- Helpers ----------
+  const resetActivityForm = () => {
+    setATitle("");
+    setADesc("");
+    setAImage("");
+    setPreviewError(false);
   };
 
-  // MOTIVATION submit
-  const handleMotivationSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const todayKey = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-      await set(ref(db, `motivasi/${todayKey}`), {
-        text: motivation,
-        author: author || "Anonim",
-        uploadedAt: new Date().toISOString(),
-      });
-      setMotivation("");
-      setAuthor("");
-      alert("✅ Motivasi berhasil diupload dan aktif selama 7 hari!");
-      setSelected(null);
-    } catch (err) {
-      console.error("Error save motivasi:", err);
-      alert("Gagal simpan motivasi.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // STRUKTUR actions
-  const handleStrukturSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const dataToSave = {};
-      Object.keys(struktur).forEach((k) => {
-        const item = struktur[k];
-        dataToSave[k] = {
-          nama: item?.nama || "",
-          uploadedAt: item?.uploadedAt || Date.now(),
-        };
-      });
-      await set(ref(db, "struktur"), dataToSave);
-      alert("✅ Struktur organisasi berhasil diperbarui!");
-      setSelected(null);
-    } catch (err) {
-      console.error("Error save struktur:", err);
-      alert("Gagal menyimpan struktur.");
-    }
-  };
-
-  const handleAddJabatan = () => {
-    if (!newJabatan.trim()) return;
-    const key = newJabatan.trim().replace(/\s+/g, "_").toLowerCase();
-    setStruktur((prev) => ({
-      ...prev,
-      [key]: { nama: "", uploadedAt: Date.now() },
-    }));
-    setNewJabatan("");
-  };
-
-  const handleDeleteJabatan = (jabatanKey) => {
-    if (!window.confirm(`Hapus jabatan ${jabatanKey.replace(/_/g, " ")}?`)) return;
-    setStruktur((prev) => {
-      const copy = { ...prev };
-      delete copy[jabatanKey];
-      return copy;
-    });
-  };
-
-  const handleChangeNama = (jabatanKey, value) => {
-    setStruktur((prev) => ({
-      ...prev,
-      [jabatanKey]: { ...prev[jabatanKey], nama: value },
-    }));
-  };
-
-  // PROGRAM kerja submit
-  const handleProgramKerjaSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await set(ref(db, `programKerja/${periode}`), programKerja || {});
-      alert("✅ Program kerja berhasil diperbarui!");
-      setSelected(null);
-    } catch (err) {
-      console.error("Error save program kerja:", err);
-      alert("Gagal menyimpan program kerja.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAddSie = () => {
-    if (!newSie.trim()) return;
-    const key = newSie.trim().replace(/\s+/g, "_").toLowerCase();
-    setProgramKerja((prev) => ({ ...prev, [key]: "" }));
-    setNewSie("");
-  };
-
-  // DELETE activity / comment
-  const handleDeleteActivity = async (id) => {
-    if (!window.confirm("Yakin ingin menghapus berita ini?")) return;
-    try {
-      await remove(ref(db, `activities/${id}`));
-    } catch (err) {
-      console.error("Delete activity failed:", err);
-      alert("Gagal menghapus berita.");
-    }
-  };
-
-  const handleDeleteComment = async (id) => {
-    if (!window.confirm("Yakin ingin menghapus komentar ini?")) return;
-    try {
-      await remove(ref(db, `comments/${id}`));
-    } catch (err) {
-      console.error("Delete comment failed:", err);
-      alert("Gagal menghapus komentar.");
-    }
-  };
-
-  // Countdown motivasi
   const getMotivationCountdown = () => {
-    if (!latestMotivation) return "";
-    const expiry = new Date(latestMotivation.uploadedAt);
+    if (!latestMotivasi) return "";
+    const expiry = new Date(latestMotivasi.uploadedAt);
     expiry.setDate(expiry.getDate() + 7);
     const diff = expiry - new Date();
     if (diff <= 0) return "0 hari 0 jam 0 menit";
@@ -316,277 +151,379 @@ export default function Dashboard() {
     return `${days} hari ${hours} jam ${minutes} menit`;
   };
 
-  // -----------------------------
-  // Render
-  // -----------------------------
+  // ---------- Actions: create ----------
+  const handleUploadActivity = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await push(ref(db, "activities"), {
+        title: aTitle,
+        description: aDesc,
+        image: formatImageUrl(aImage),
+        date: new Date().toISOString(),
+      });
+      resetActivityForm();
+      setTab("manage"); // langsung ke manage agar bisa lihat
+      alert("✅ Kegiatan berhasil diupload!");
+    } catch (err) {
+      console.error("upload activity error", err);
+      alert("Gagal upload kegiatan.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadMotivasi = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const key = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+      await set(ref(db, `motivasi/${key}`), {
+        text: motivasiText,
+        author: motivasiAuthor || "Anonim",
+        uploadedAt: new Date().toISOString(),
+      });
+      setMotivasiText("");
+      setMotivasiAuthor("");
+      alert("✅ Motivasi berhasil disimpan (aktif 7 hari).");
+      setTab("motivasi");
+    } catch (err) {
+      console.error("save motivasi", err);
+      alert("Gagal simpan motivasi.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveStruktur = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      // ensure setiap entry memiliki nama & uploadedAt
+      const payload = {};
+      Object.keys(struktur).forEach((k) => {
+        payload[k] = {
+          nama: struktur[k]?.nama || "",
+          uploadedAt: struktur[k]?.uploadedAt || Date.now(),
+        };
+      });
+      await set(ref(db, "struktur"), payload);
+      alert("✅ Struktur tersimpan.");
+      setTab("struktur");
+    } catch (err) {
+      console.error("save struktur", err);
+      alert("Gagal menyimpan struktur.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddJabatan = () => {
+    if (!newJabatan.trim()) return;
+    const key = newJabatan.trim().replace(/\s+/g, "_").toLowerCase();
+    setStruktur((p) => ({ ...p, [key]: { nama: "", uploadedAt: Date.now() } }));
+    setNewJabatan("");
+  };
+
+  const handleSaveProgram = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await set(ref(db, `programKerja/${periode}`), programKerja || {});
+      alert("✅ Program kerja tersimpan.");
+      setTab("program");
+    } catch (err) {
+      console.error("save program", err);
+      alert("Gagal menyimpan program kerja.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddSie = () => {
+    if (!newSie.trim()) return;
+    const key = newSie.trim().replace(/\s+/g, "_").toLowerCase();
+    setProgramKerja((p) => ({ ...p, [key]: "" }));
+    setNewSie("");
+  };
+
+  // ---------- Actions: delete ----------
+  // Hapus satu komentar
+  const handleDeleteComment = async (commentId) => {
+    if (!window.confirm("Yakin ingin menghapus komentar ini?")) return;
+    try {
+      await remove(ref(db, `comments/${commentId}`));
+      // UI akan update karena onValue listener
+    } catch (err) {
+      console.error("delete comment", err);
+      alert("Gagal menghapus komentar.");
+    }
+  };
+
+  // Hapus berita & komentar terkait
+  const handleDeleteActivity = async (activityId) => {
+    if (!window.confirm("Yakin ingin menghapus berita ini dan semua komentarnya?")) return;
+    setLoading(true);
+    try {
+      // 1) hapus activity
+      await remove(ref(db, `activities/${activityId}`));
+
+      // 2) query comments where activityId == activityId, lalu hapus semua yang match
+      const q = query(ref(db, "comments"), orderByChild("activityId"), equalTo(activityId));
+      const snap = await get(q);
+      if (snap.exists()) {
+        const val = snap.val();
+        const keys = Object.keys(val);
+        await Promise.all(keys.map((k) => remove(ref(db, `comments/${k}`))));
+      }
+      alert("✅ Berita dan komentar terkait berhasil dihapus.");
+    } catch (err) {
+      console.error("delete activity & comments", err);
+      alert("Gagal menghapus berita atau komentarnya.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ---------- Render ----------
   return (
-    <div className="min-h-screen p-6" style={{ background: themeKey === "dark" ? "#0b0f13" : "" }}>
-      {/* Header */}
-      <header className={`rounded-2xl p-6 mb-6 shadow-lg ${theme.header}`}>
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <div className={`min-h-screen ${darkMode ? "dark bg-gray-900 text-white" : "bg-gray-50 text-gray-900"}`}>
+      {/* Navbar */}
+      <nav className="flex items-center justify-between px-4 py-3 bg-green-600 dark:bg-green-800 text-white shadow">
+        <div className="flex items-center gap-3">
+          <div className="text-2xl">📊</div>
           <div>
-            <h1 className="text-3xl font-extrabold">📊 Dashboard Admin</h1>
-            <p className="mt-1 opacity-80">Kelola berita, motivasi, struktur, program kerja, dan komentar.</p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Theme chooser */}
-            <div className="text-sm mr-2 hidden md:block">Tema:</div>
-            <div className="flex gap-2">
-              {Object.keys(THEMES).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => setThemeKey(k)}
-                  className={`px-3 py-1 rounded-2xl border ${themeKey === k ? "ring-2 ring-offset-2" : "opacity-70"} ${k === "green" ? "bg-emerald-50 text-emerald-700" : k === "blue" ? "bg-blue-50 text-blue-700" : "bg-gray-900 text-gray-100"}`}
-                >
-                  {THEMES[k].name}
-                </button>
-              ))}
-            </div>
-
-            {/* quick status */}
-            <div className="ml-3 text-sm text-white/90 p-2 rounded" style={{ background: "rgba(255,255,255,0.08)" }}>
-              {activities.length} berita • {comments.length} komentar
-            </div>
+            <div className="font-bold">Dashboard Admin</div>
+            <div className="text-sm opacity-90">Kelola Berita, Motivasi, Struktur, Program, Komentar</div>
           </div>
         </div>
-      </header>
 
-      {/* Menu Tab */}
-      <div className="max-w-6xl mx-auto mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <button
-            onClick={() => setSelected("activity")}
-            className={`p-4 rounded-2xl shadow-lg text-left ${selected === "activity" ? theme.btnPrimary : "bg-white dark:bg-gray-800"}`}
-          >
-            📌 <div className="font-semibold mt-1">Upload Kegiatan</div>
-          </button>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex text-sm opacity-90">{activities.length} berita • {comments.length} komentar</div>
 
           <button
-            onClick={() => { if (!motivationActive) setSelected("motivation"); }}
-            disabled={motivationActive}
-            className={`p-4 rounded-2xl shadow-lg text-left ${selected === "motivation" ? theme.btnPrimary : "bg-white dark:bg-gray-800"} ${motivationActive ? "opacity-60 cursor-not-allowed" : ""}`}
+            onClick={() => setDarkMode((d) => !d)}
+            className="p-2 rounded-full hover:bg-green-700 dark:hover:bg-green-600 transition"
+            aria-label="toggle dark"
           >
-            🌟 <div className="font-semibold mt-1">Upload Motivasi</div>
-            {motivationActive && <div className="text-xs mt-1">{getMotivationCountdown()} tersisa</div>}
+            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
+        </div>
+      </nav>
 
-          <button
-            onClick={() => setSelected("struktur")}
-            className={`p-4 rounded-2xl shadow-lg text-left ${selected === "struktur" ? theme.btnPrimary : "bg-white dark:bg-gray-800"}`}
-          >
-            👥 <div className="font-semibold mt-1">Struktur Organisasi</div>
-          </button>
+      {/* Tabs */}
+      <div className="max-w-5xl mx-auto px-4 mt-4">
+        <div className="flex flex-wrap gap-2 justify-center">
+          {[
+            ["news", "📰 Berita"],
+            ["motivasi", "🌟 Motivasi"],
+            ["struktur", "👥 Struktur"],
+            ["program", "📋 Program Kerja"],
+            ["manage", "💬 Kelola Komentar"],
+          ].map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setTab(k)}
+              className={`px-4 py-2 rounded-full text-sm md:text-base font-medium ${tab === k ? "bg-green-600 text-white" : "bg-white dark:bg-gray-800 dark:text-gray-200"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-          <button
-            onClick={() => setSelected("program")}
-            className={`p-4 rounded-2xl shadow-lg text-left ${selected === "program" ? theme.btnPrimary : "bg-white dark:bg-gray-800"}`}
-          >
-            📋 <div className="font-semibold mt-1">Program Kerja</div>
-          </button>
+        {/* Content container */}
+        <div className="mt-6">
+          <AnimatePresence mode="wait">
+            {/* NEWS (upload + preview + list + delete) */}
+            {tab === "news" && (
+              <motion.div key="news" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <form onSubmit={handleUploadActivity} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow">
+                  <h3 className="text-lg font-semibold mb-3">📢 Upload Berita / Kegiatan</h3>
 
-          <button
-            onClick={() => setSelected("manage")}
-            className={`p-4 rounded-2xl shadow-lg text-left ${selected === "manage" ? theme.btnPrimary : "bg-white dark:bg-gray-800"}`}
-          >
-            📰 <div className="font-semibold mt-1">Berita & Komentar</div>
-          </button>
+                  <input value={aTitle} onChange={(e) => setATitle(e.target.value)} placeholder="Judul kegiatan" className="w-full p-2 rounded border mb-2 dark:bg-gray-900" required />
+                  <textarea value={aDesc} onChange={(e) => setADesc(e.target.value)} placeholder="Deskripsi kegiatan" className="w-full p-2 rounded border mb-2 dark:bg-gray-900" rows={4} required />
+                  <input value={aImage} onChange={(e) => { setAImage(e.target.value); setPreviewError(false); }} placeholder="Link gambar (imgbb / drive)" className="w-full p-2 rounded border mb-2 dark:bg-gray-900" />
+                  {aImage && (
+                    <div className="mb-2 rounded overflow-hidden border">
+                      <img src={formatImageUrl(aImage)} alt="preview" className="w-full h-48 object-cover" onError={() => setPreviewError(true)} />
+                      {previewError && <div className="p-2 text-sm text-red-500">❌ Preview gagal. Pastikan direct link atau link drive benar.</div>}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button type="submit" className="px-4 py-2 rounded bg-green-600 text-white">Upload</button>
+                    <button type="button" onClick={resetActivityForm} className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700">Reset</button>
+                  </div>
+                </form>
+
+                {/* list berita */}
+                <div className="mt-6 grid gap-4">
+                  {activities.length === 0 ? (
+                    <div className="text-center text-gray-500">Belum ada berita.</div>
+                  ) : (
+                    activities.map((a) => (
+                      <div key={a.key} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow flex flex-col md:flex-row gap-4">
+                        <div className="w-full md:w-40 h-28 rounded overflow-hidden border">
+                          {a.image ? <img src={a.image} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-400">No Image</div>}
+                        </div>
+
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="font-semibold">{a.title}</div>
+                              <div className="text-xs text-gray-500">{a.date ? new Date(a.date).toLocaleString() : ""}</div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => { setTab("manage"); }} className="text-sm px-3 py-1 rounded bg-gray-100 dark:bg-gray-700">Lihat komentar</button>
+                              <button onClick={() => handleDeleteActivity(a.key)} className="text-sm px-3 py-1 rounded bg-red-500 text-white">Hapus</button>
+                            </div>
+                          </div>
+
+                          <p className="mt-2 text-gray-700 dark:text-gray-200">{a.description}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* MOTIVASI */}
+            {tab === "motivasi" && (
+              <motion.div key="motivasi" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <form onSubmit={handleUploadMotivasi} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow">
+                  <h3 className="text-lg font-semibold mb-3">🌟 Upload Motivasi (aktif 7 hari)</h3>
+                  <textarea value={motivasiText} onChange={(e) => setMotivasiText(e.target.value)} placeholder="Tulis motivasi..." className="w-full p-2 rounded border mb-2 dark:bg-gray-900" rows={4} required />
+                  <input value={motivasiAuthor} onChange={(e) => setMotivasiAuthor(e.target.value)} placeholder="Nama pengutip (opsional)" className="w-full p-2 rounded border mb-2 dark:bg-gray-900" />
+                  <div className="flex gap-2">
+                    <button className="px-4 py-2 rounded bg-green-600 text-white">Simpan</button>
+                    <button type="button" onClick={() => { setMotivasiText(""); setMotivasiAuthor(""); }} className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700">Reset</button>
+                  </div>
+                </form>
+
+                {latestMotivasi && (
+                  <div className="mt-4 p-4 rounded-2xl bg-green-50 dark:bg-green-900">
+                    <div className="italic">“{latestMotivasi.text}”</div>
+                    <div className="text-sm mt-2">— {latestMotivasi.author} • sisa {getMotivationCountdown()}</div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* STRUKTUR */}
+            {tab === "struktur" && (
+              <motion.div key="struktur" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <form onSubmit={handleSaveStruktur} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow space-y-3">
+                  <h3 className="text-lg font-semibold">👥 Struktur Organisasi</h3>
+                  {Object.entries(struktur).length === 0 && <div className="text-sm text-gray-500">Belum ada jabatan.</div>}
+                  <div className="space-y-2">
+                    {Object.entries(struktur)
+                      .sort((a, b) => (a[1].uploadedAt || 0) - (b[1].uploadedAt || 0))
+                      .map(([k, v]) => (
+                        <div key={k} className="flex gap-2 items-center">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium capitalize">{k.replace(/_/g, " ")}</div>
+                            <input value={v.nama || ""} onChange={(e) => setStruktur((p) => ({ ...p, [k]: { ...v, nama: e.target.value } }))} className="w-full p-2 rounded border dark:bg-gray-900" />
+                          </div>
+                          <button type="button" onClick={() => { const c = { ...struktur }; delete c[k]; setStruktur(c); }} className="px-3 py-1 rounded bg-red-500 text-white">Hapus</button>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="flex gap-2 mt-2">
+                    <input value={newJabatan} onChange={(e) => setNewJabatan(e.target.value)} placeholder="Tambah jabatan baru..." className="flex-1 p-2 rounded border dark:bg-gray-900" />
+                    <button type="button" onClick={handleAddJabatan} className="px-4 py-2 rounded bg-green-600 text-white">➕</button>
+                  </div>
+
+                  <div className="flex gap-2 mt-2">
+                    <button className="px-4 py-2 rounded bg-green-600 text-white">Simpan Struktur</button>
+                    <button type="button" onClick={() => setTab("manage")} className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700">Lihat komentar</button>
+                  </div>
+                </form>
+              </motion.div>
+            )}
+
+            {/* PROGRAM */}
+            {tab === "program" && (
+              <motion.div key="program" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <form onSubmit={handleSaveProgram} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow space-y-3">
+                  <h3 className="text-lg font-semibold">📋 Program Kerja ({periode})</h3>
+                  <div className="flex gap-2 items-center">
+                    <label className="text-sm">Periode</label>
+                    <input type="number" value={periode} onChange={(e) => setPeriode(Number(e.target.value))} className="p-2 rounded border dark:bg-gray-900 w-32" />
+                  </div>
+
+                  <div className="space-y-2">
+                    {Object.entries(programKerja || {}).map(([k, v]) => (
+                      <div key={k} className="p-2 rounded border dark:bg-gray-900">
+                        <div className="flex justify-between items-center mb-1">
+                          <div className="capitalize">{k.replace(/_/g, " ")}</div>
+                          <button type="button" onClick={() => { const copy = { ...programKerja }; delete copy[k]; setProgramKerja(copy); }} className="text-red-500">Hapus</button>
+                        </div>
+                        <textarea value={v} onChange={(e) => setProgramKerja((p) => ({ ...p, [k]: e.target.value }))} className="w-full p-2 rounded" rows={3} />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input value={newSie} onChange={(e) => setNewSie(e.target.value)} placeholder="Nama sie baru..." className="flex-1 p-2 rounded border dark:bg-gray-900" />
+                    <button type="button" onClick={handleAddSie} className="px-4 py-2 rounded bg-green-600 text-white">➕</button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button className="px-4 py-2 rounded bg-green-600 text-white">Simpan Program</button>
+                    <button type="button" onClick={() => setTab("manage")} className="px-4 py-2 rounded bg-gray-200 dark:bg-gray-700">Lihat komentar</button>
+                  </div>
+                </form>
+              </motion.div>
+            )}
+
+            {/* MANAGE COMMENTS (detail list + delete) */}
+            {tab === "manage" && (
+              <motion.div key="manage" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow space-y-4">
+                  <h3 className="text-lg font-semibold">💬 Kelola Komentar</h3>
+
+                  {/* show comments grouped by activity optionally */}
+                  {comments.length === 0 ? (
+                    <div className="text-gray-500">Belum ada komentar.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {comments.map((c) => (
+                        <div key={c.key} className="p-3 rounded border dark:bg-gray-900 flex flex-col md:flex-row md:justify-between gap-2">
+                          <div>
+                            <div className="font-medium">{c.name || "Anonim"}</div>
+                            <div className="text-sm text-gray-500">{c.text}</div>
+                            <div className="text-xs text-gray-400 mt-1">{c.activityId ? `Untuk berita: ${c.activityId}` : ""} {c.timestamp ? ` • ${new Date(c.timestamp).toLocaleString()}` : ""}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => handleDeleteComment(c.key)} className="px-3 py-1 rounded bg-red-500 text-white">Hapus</button>
+                            {c.activityId && (
+                              <button onClick={() => { /* jump to news tab and highlight */ setTab("news"); setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 200); }} className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700">Lihat Berita</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* small loading indicator */}
+          {loading && <div className="mt-4 text-center text-sm">Memproses...</div>}
         </div>
       </div>
 
-      {/* CONTENT */}
-      <div className="max-w-6xl mx-auto">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 rounded-2xl shadow-xl" style={{ background: theme.card }}>
-          {loading && (
-            <div className="mb-4 p-3 text-center rounded" style={{ background: "rgba(0,0,0,0.06)" }}>
-              ⏳ Sedang memproses...
-            </div>
-          )}
-
-          {/* Upload Kegiatan */}
-          {selected === "activity" && (
-            <form onSubmit={handleActivitySubmit} className="space-y-4">
-              <h2 className={`text-2xl font-bold ${theme.accentText}`}>📌 Upload Kegiatan</h2>
-
-              <input value={activity} onChange={(e) => setActivity(e.target.value)} required placeholder="Judul kegiatan" className="w-full px-4 py-3 rounded-xl border" />
-
-              <textarea value={activityDesc} onChange={(e) => setActivityDesc(e.target.value)} required placeholder="Deskripsi kegiatan" className="w-full px-4 py-3 rounded-xl h-32 border" />
-
-              <div className={`p-3 rounded-lg ${theme.btnAccent}`}>
-                <p className="font-semibold">Cara dapat link foto (imgbb):</p>
-                <ol className="list-decimal list-inside text-sm mt-1">
-                  <li>Buka imgbb.com → upload → Copy Direct Link</li>
-                  <li>Tempel ke input link foto</li>
-                </ol>
-              </div>
-
-              <input value={activityImage} onChange={(e) => { setActivityImage(e.target.value); setPreviewError(false); }} placeholder="Link foto (direct link atau drive)" className="w-full px-4 py-3 rounded-xl border" />
-
-              {activityImage && (
-                <div className="mt-2 rounded overflow-hidden border">
-                  <img src={formatImageUrl(activityImage)} alt="preview" className="w-full h-56 object-cover" onError={() => setPreviewError(true)} />
-                  {previewError && <p className="text-red-500 text-sm p-2">❌ Link tidak valid. Pastikan direct link.</p>}
-                </div>
-              )}
-
-              <div className="flex gap-3 mt-3">
-                <button className={`px-6 py-2 rounded-xl ${theme.btnPrimary}`}>Simpan</button>
-                <button type="button" onClick={() => setSelected(null)} className="px-6 py-2 rounded-xl bg-white border">⬅ Kembali</button>
-              </div>
-            </form>
-          )}
-
-          {/* Upload Motivasi */}
-          {selected === "motivation" && (
-            <form onSubmit={handleMotivationSubmit} className="space-y-4">
-              <h2 className={`text-2xl font-bold ${theme.accentText}`}>🌟 Upload Motivasi</h2>
-
-              <textarea value={motivation} onChange={(e) => setMotivation(e.target.value)} required placeholder="Tulis motivasi..." className="w-full px-4 py-3 rounded-xl h-28 border" />
-              <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Nama pengutip (opsional)" className="w-full px-4 py-3 rounded-xl border" />
-
-              <div className="flex gap-3">
-                <button className={`px-6 py-2 rounded-xl ${theme.btnPrimary}`}>Simpan</button>
-                <button type="button" onClick={() => setSelected(null)} className="px-6 py-2 rounded-xl bg-white border">⬅ Kembali</button>
-              </div>
-
-              {latestMotivation && (
-                <div className="mt-4 p-4 rounded-xl border">
-                  <div className="font-semibold">Motivasi Aktif</div>
-                  <div className="text-sm mt-1">{latestMotivation.text}</div>
-                  <div className="text-xs mt-2 text-gray-500">oleh {latestMotivation.author} — sisa {getMotivationCountdown()}</div>
-                </div>
-              )}
-            </form>
-          )}
-
-          {/* Struktur */}
-          {selected === "struktur" && (
-            <form onSubmit={handleStrukturSubmit} className="space-y-4">
-              <h2 className={`text-2xl font-bold ${theme.accentText}`}>👥 Struktur Organisasi</h2>
-
-              {Object.entries(struktur)
-                .sort((a, b) => (a[1].uploadedAt || 0) - (b[1].uploadedAt || 0))
-                .map(([jabKey, item]) => (
-                  <div key={jabKey} className="p-3 rounded-xl mb-3 flex items-center gap-3 border">
-                    <div className="flex-1">
-                      <div className="text-sm font-medium capitalize">{jabKey.replace(/_/g, " ")}</div>
-                      <input value={item?.nama || ""} onChange={(e) => handleChangeNama(jabKey, e.target.value)} placeholder={`Nama ${jabKey.replace(/_/g, " ")}`} className="w-full px-3 py-2 rounded-lg mt-2 border" />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <div className="text-xs text-gray-500">{new Date(item?.uploadedAt || Date.now()).toLocaleDateString()}</div>
-                      <button type="button" onClick={() => handleDeleteJabatan(jabKey)} className="px-3 py-1 rounded bg-red-500 text-white">Hapus</button>
-                    </div>
-                  </div>
-                ))}
-
-              <div className="flex gap-2">
-                <input value={newJabatan} onChange={(e) => setNewJabatan(e.target.value)} placeholder="Nama jabatan baru..." className="flex-grow px-3 py-2 rounded-lg border" />
-                <button type="button" onClick={handleAddJabatan} className="px-4 py-2 rounded-lg bg-white border">➕ Tambah</button>
-              </div>
-
-              <div className="flex gap-3">
-                <button className={`px-6 py-2 rounded-xl ${theme.btnPrimary}`}>💾 Simpan</button>
-                <button type="button" onClick={() => setSelected(null)} className="px-6 py-2 rounded-xl bg-white border">⬅ Kembali</button>
-              </div>
-            </form>
-          )}
-
-          {/* Program Kerja */}
-          {selected === "program" && (
-            <form onSubmit={handleProgramKerjaSubmit} className="space-y-4">
-              <h2 className={`text-2xl font-bold ${theme.accentText}`}>📋 Program Kerja</h2>
-
-              <div className="flex items-center gap-3">
-                <label>Periode</label>
-                <input type="number" value={periode} onChange={(e) => setPeriode(Number(e.target.value))} className="px-3 py-2 rounded-lg border w-36" />
-              </div>
-
-              {Object.keys(programKerja || {}).length === 0 && <p className="text-sm text-gray-500">Belum ada sie untuk periode ini.</p>}
-
-              {Object.entries(programKerja || {}).map(([sieKey, desc]) => (
-                <div key={sieKey} className="p-3 rounded-xl border mb-3">
-                  <div className="flex justify-between items-center mb-2">
-                    <div className="font-medium capitalize">Sie {sieKey.replace(/_/g, " ")}</div>
-                    <button type="button" onClick={() => {
-                      if (!window.confirm(`Hapus sie "${sieKey}"?`)) return;
-                      setProgramKerja((prev) => {
-                        const copy = { ...prev };
-                        delete copy[sieKey];
-                        return copy;
-                      });
-                    }} className="px-2 py-1 rounded bg-red-500 text-white text-sm">Hapus</button>
-                  </div>
-                  <textarea rows={3} value={desc} onChange={(e) => setProgramKerja((prev) => ({ ...prev, [sieKey]: e.target.value }))} className="w-full px-3 py-2 rounded-lg border" />
-                </div>
-              ))}
-
-              <div className="flex gap-2">
-                <input value={newSie} onChange={(e) => setNewSie(e.target.value)} placeholder="Nama sie baru..." className="flex-grow px-3 py-2 rounded-lg border" />
-                <button type="button" onClick={handleAddSie} className="px-4 py-2 rounded-lg bg-white border">➕</button>
-              </div>
-
-              <div className="flex gap-3">
-                <button className={`px-6 py-2 rounded-xl ${theme.btnPrimary}`}>Simpan</button>
-                <button type="button" onClick={() => setSelected(null)} className="px-6 py-2 rounded-xl bg-white border">⬅ Kembali</button>
-              </div>
-            </form>
-          )}
-
-          {/* Manage Berita & Komentar */}
-          {selected === "manage" && (
-            <div className="space-y-6">
-              <h2 className={`text-2xl font-bold ${theme.accentText}`}>📰 Berita & Komentar</h2>
-
-              <div>
-                <h3 className="font-semibold mb-2">Daftar Berita ({activities.length})</h3>
-                {activities.length === 0 ? (
-                  <p className="text-gray-500">Belum ada berita.</p>
-                ) : (
-                  activities.map((a) => (
-                    <motion.div key={a.key} className="p-4 rounded-xl mb-3 border flex gap-4 items-start">
-                      <div className="w-32 h-20 rounded overflow-hidden border">
-                        {a.image ? <img src={a.image} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">No Image</div>}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-semibold">{a.title}</div>
-                        <div className="text-sm text-gray-500 mt-1">{a.description?.slice(0, 140)}</div>
-                        <div className="text-xs text-gray-400 mt-2">{a.date ? new Date(a.date).toLocaleString() : ""}</div>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <button onClick={() => handleDeleteActivity(a.key)} className="px-3 py-1 rounded bg-red-500 text-white">Hapus</button>
-                      </div>
-                    </motion.div>
-                  ))
-                )}
-              </div>
-
-              <div>
-                <h3 className="font-semibold mb-2">Komentar ({comments.length})</h3>
-                {comments.length === 0 ? (
-                  <p className="text-gray-500">Belum ada komentar.</p>
-                ) : (
-                  comments.map((c) => (
-                    <motion.div key={c.key} className="p-3 rounded-xl mb-2 border flex justify-between items-start">
-                      <div>
-                        <div className="font-medium">{c.name || "Anonim"}</div>
-                        <div className="text-sm text-gray-500 mt-1">{c.text}</div>
-                        <div className="text-xs text-gray-400 mt-2">{c.createdAt ? new Date(c.createdAt).toLocaleString() : ""}</div>
-                      </div>
-                      <div>
-                        <button onClick={() => handleDeleteComment(c.key)} className="px-3 py-1 rounded bg-red-500 text-white">Hapus</button>
-                      </div>
-                    </motion.div>
-                  ))
-                )}
-              </div>
-
-              <div className="flex justify-end">
-                <button onClick={() => setSelected(null)} className="px-6 py-2 rounded-xl bg-white border">⬅ Kembali</button>
-              </div>
-            </div>
-          )}
-        </motion.div>
-      </div>
+      <div className="h-24" />
     </div>
   );
+}
+
+// helper countdown function used inside component
+function getMotivationCountdown() {
+  // This function is used via reference in one place; component-level version exists earlier.
+  return "";
 }
